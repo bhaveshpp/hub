@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#E65100">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>હબ</title>
+  <style>
+    :root { --ink:#1F2430; --muted:#6B7280; --bg:#FFF8F0; --line:#EADFD2; --brand:#E65100; }
+    * { box-sizing: border-box; } [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Gujarati", sans-serif; }
+    header { background: var(--brand); color: #fff; padding: calc(.6rem + env(safe-area-inset-top)) 1rem .6rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; }
+    header h1 { margin: 0; font-size: 1.2rem; } header button { border: 1px solid rgba(255,255,255,.6); background: none; color: #fff; border-radius: 9999px; min-width: 2.4rem; height: 2.4rem; font: inherit; font-weight: 700; margin-left: .4rem; cursor: pointer; }
+    main { max-width: 40rem; margin: 0 auto; padding: .8rem .8rem 3rem; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: .9rem; padding: 1rem; }
+    .field { width: 100%; border: 1px solid var(--line); border-radius: .6rem; padding: .8rem; font: inherit; font-size: 1.4rem; text-align: center; letter-spacing: .3em; min-height: 48px; }
+    .btn { width: 100%; margin-top: .8rem; min-height: 48px; border: 0; border-radius: .6rem; background: var(--brand); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+    .btn:disabled { opacity: .55; }
+    .grp { margin: 1.2rem .2rem .5rem; font-weight: 800; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+    a.tile { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid var(--line); border-radius: .9rem; padding: .9rem .8rem; min-height: 6.2rem; }
+    a.tile:active { background: #FFE8D6; } .ico { font-size: 1.9rem; line-height: 1; } .ttl { font-weight: 800; margin-top: .4rem; } .note { color: var(--muted); font-size: .82rem; margin-top: .1rem; }
+    .empty { text-align: center; color: var(--muted); padding: 2rem 1rem; } .sync { text-align: center; font-size: .75rem; color: var(--muted); }
+    .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 1.2rem; background: #D32F2F; color: #fff; padding: .7rem 1rem; border-radius: .6rem; font-weight: 600; max-width: 90vw; }
+  </style>
+</head>
+<body>
+  <header><h1>🧭 હબ</h1><div id="tools" hidden><button id="rf" type="button" aria-label="રિફ્રેશ">⟳</button><button id="lo" type="button" aria-label="લોગઆઉટ">⎋</button></div></header>
+  <main>
+    <section id="login" class="card" hidden>
+      <b>PIN નાખો</b>
+      <form id="form" novalidate><input id="pin" class="field" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12"><button id="go" class="btn" type="submit">ખોલો</button></form>
+    </section>
+    <section id="home" hidden><div id="list"></div><div id="sync" class="sync"></div></section>
+  </main>
+<script>
+(() => {
+  'use strict';
+  /* ============ CONFIG: paste your Apps Script Web App URL ============ */
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxKH7ZGHyCJ70hhIYMWO0K38c9qBo3n_fjkT4sOJupIEcjy_ZPnafDW-aS2qnd49CEN/exec';
+  /* =================================================================== */
+  const SK = 'hub_session_v1', CK = 'hub_cards_v1';
+  const $ = (id) => document.getElementById(id);
+  const toast = (m) => { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); };
+  const ls = { get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }, del: (k) => { try { localStorage.removeItem(k); } catch (_) {} } };
+  const safeUrl = (u) => (/^https:\/\//i.test(u) ? u : '#');
+
+  async function api(action, payload) {
+    if (API_URL.indexOf('PASTE_') === 0) throw new Error('index.html માં API_URL મૂકો.');
+    let d;
+    try { const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action }, payload)) }); d = await r.json(); }
+    catch (_) { throw new Error('ઇન્ટરનેટ તપાસો અને ફરી પ્રયત્ન કરો.'); }
+    if (!d.success) { const e = new Error(d.message || 'ભૂલ'); e.code = d.error; throw e; }
+    return d;
+  }
+  function render(data) {
+    const box = $('list'); box.replaceChildren();
+    if (!data || !data.groups || !data.groups.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'કોઈ કાર્ડ નથી. Sheet ના Cards ટેબમાં ઉમેરો.'; box.appendChild(e); return; }
+    data.groups.forEach((g) => {
+      const h = document.createElement('div'); h.className = 'grp'; h.textContent = (g.icon ? g.icon + ' ' : '') + g.name; box.appendChild(h);
+      const grid = document.createElement('div'); grid.className = 'grid';
+      g.cards.forEach((c) => {
+        const a = document.createElement('a'); a.className = 'tile'; a.href = safeUrl(c.url);          // same tab → opens inside the installed app
+        const i = document.createElement('div'); i.className = 'ico'; i.textContent = c.icon;
+        const t = document.createElement('div'); t.className = 'ttl'; t.textContent = c.title;
+        a.append(i, t);
+        if (c.note) { const n = document.createElement('div'); n.className = 'note'; n.textContent = c.note; a.appendChild(n); }
+        grid.appendChild(a);
+      });
+      box.appendChild(grid);
+    });
+  }
+  function show(which) { $('login').hidden = which !== 'login'; $('home').hidden = which !== 'home'; $('tools').hidden = which !== 'home'; }
+  async function refresh(manual) {
+    const s = ls.get(SK); if (!s) return show('login');
+    try {
+      const d = await api('cards', { token: s.token });
+      ls.set(CK, { groups: d.groups, at: Date.now() }); render(d); $('sync').textContent = '';
+      if (manual) toast('રિફ્રેશ થયું');
+    } catch (err) {
+      if (err.code === 'session_expired') { ls.del(SK); ls.del(CK); show('login'); toast(err.message); return; }
+      $('sync').textContent = '⚠ ' + err.message + ' (જૂની યાદી)';
+      if (manual) toast(err.message);
+    }
+  }
+  function start() {
+    const s = ls.get(SK);
+    if (!s || s.exp < Date.now()) { ls.del(SK); show('login'); return; }
+    show('home');
+    const cached = ls.get(CK);
+    if (cached) render(cached); else $('list').innerHTML = '<div class="empty">લોડ થાય છે…</div>';
+    refresh(false);
+  }
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pin = $('pin').value.trim(); if (!pin) return;
+    $('go').disabled = true;
+    try { const d = await api('login', { pin }); ls.set(SK, { token: d.token, exp: d.expires }); $('pin').value = ''; start(); }
+    catch (err) { toast(err.message); } finally { $('go').disabled = false; }
+  });
+  $('rf').addEventListener('click', () => refresh(true));
+  $('lo').addEventListener('click', () => { ls.del(SK); ls.del(CK); show('login'); });
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  start();
+})();
+</script>
+</body>
+</html>
